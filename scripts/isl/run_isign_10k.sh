@@ -30,16 +30,7 @@ log() { echo -e "\n\033[1;36m[isign10k] $*\033[0m"; }
 
 prep() {
   log "A1/5  python deps"
-  pip install --no-cache-dir -q \
-      albumentations==1.4.13 numpy==1.24.4 pandas==2.0.1 transformers==4.31.0 \
-      lmdb==1.2.1 timm==0.9.16 requests ml-collections==0.1.1 \
-      pytorch-ignite==0.4.13 Pillow==9.0.1 matplotlib nlpaug==1.1.11 nltk==3.6.7 \
-      fasttext==0.9.2 sentencepiece==0.1.99 einops==0.8.0 mediapipe==0.10.5 \
-      onnxscript albucore==0.0.13 spacy==3.7.4 opencv-python==4.8.1.78 \
-      "huggingface_hub[cli]"
-  pip install --no-cache-dir -q --no-deps xformers==0.0.27.post2
-  pip install --no-cache-dir -q \
-      https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.7.1/en_core_web_lg-3.7.1-py3-none-any.whl
+  bash "${SIGN2GPT_ROOT}/scripts/isl/isign_deps.sh"
 
   log "A2/5  download iSign text + video parts (~58 GB, poses NOT downloaded)"
   if [ ! -f "${ISIGN_RAW}/iSign_v1.1.csv" ]; then
