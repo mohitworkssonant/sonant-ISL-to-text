@@ -53,7 +53,7 @@ prep() {
       --zip_parts "${ISIGN_RAW}"/iSign-videos_v1.1_part_a* \
       --manifest  "${ISL_DATA}/needed_videos.txt" \
       --lmdb_root "${LMDB_VIDEOS}" \
-      --target_fps 25 --size 256 --workers "$(nproc)"
+      --target_fps 25 --size 256 ${WORKERS:+--workers "$WORKERS"}
 
   log "A5/5  English pseudo-gloss vocabulary"
   if [ ! -f "${PKL}" ]; then

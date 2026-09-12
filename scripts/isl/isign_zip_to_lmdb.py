@@ -45,9 +45,20 @@ Already-unzipped instead? Use --videos_dir /path/to/videos (recursively
 searched) and drop --zip_parts.
 """
 
+import os
+
+# Set BEFORE numpy / OpenCV are imported, or they read the host's core count.
+# A RunPod container sees the HOST's cores through nproc (64 on an A40 box) but
+# is allocated far fewer, so every worker process spawning 64 BLAS threads ends
+# in "pthread_create failed: Resource temporarily unavailable". One compute
+# thread per worker process is right here anyway: the parallelism is across
+# clips, not inside them.
+for _var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+             "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ.setdefault(_var, "1")
+
 import argparse
 import io
-import os
 import pickle
 import shutil
 import sys
@@ -57,12 +68,40 @@ from pathlib import Path
 
 import cv2
 import lmdb
+
+cv2.setNumThreads(0)   # OpenCV keeps its own pool; same reasoning as above
 import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from isign_http_zip import MultiPartHttpFile, hf_urls  # noqa: E402
+
+def usable_cpus():
+    """CPUs this container may actually use.
+
+    `os.cpu_count()` and `nproc` both report the host's cores inside a
+    container. The cgroup quota is the real allocation; scheduler affinity is
+    the next best signal.
+    """
+    try:                                     # cgroup v2
+        quota, period = open("/sys/fs/cgroup/cpu.max").read().split()
+        if quota != "max":
+            return max(1, int(int(quota) / int(period)))
+    except Exception:                        # noqa: BLE001
+        pass
+    try:                                     # cgroup v1
+        q = int(open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").read())
+        pr = int(open("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read())
+        if q > 0:
+            return max(1, q // pr)
+    except Exception:                        # noqa: BLE001
+        pass
+    try:
+        return len(os.sched_getaffinity(0))
+    except Exception:                        # noqa: BLE001
+        return os.cpu_count() or 4
+
 
 N_BYTES = 2 ** 34          # 16 GB map per clip-LMDB; LMDB is sparse, costs nothing
 COMMIT_EVERY = 100
@@ -401,7 +440,10 @@ def main():
     ap.add_argument("--stop_after", type=int, default=0,
                     help="Stop once this many clips have been written successfully. Use with a "
                          "larger manifest so short-clip rejections don't shrink the dataset.")
-    ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 4) // 2))
+    ap.add_argument("--workers", type=int, default=min(8, usable_cpus()),
+                    help="Decode processes. Defaults to the container's CPU quota, capped at 8 "
+                         "- this step is I/O and decode bound, so more processes mostly buys "
+                         "thread contention.")
     ap.add_argument("--overwrite", action="store_true")
     ap.add_argument("--limit", type=int, default=0, help="Process only the first N clips (smoke test)")
     args = ap.parse_args()
@@ -420,7 +462,8 @@ def main():
     clips = interleave_by_split(read_manifest(args.manifest))
     if args.limit:
         clips = clips[:args.limit]
-    print(f"[lmdb] {len(clips):,} clips in manifest")
+    print(f"[lmdb] {len(clips):,} clips in manifest | workers={args.workers} "
+          f"(container CPU quota: {usable_cpus()})")
 
     print("[lmdb] indexing video archive ...")
     index = (build_index_from_dir(args.videos_dir) if source[0] == "dir"

@@ -72,7 +72,7 @@ prep() {
       --lmdb_root "${LMDB_VIDEOS}" \
       --max_src_frames "${MAX_SRC_FRAMES}" \
       --stop_after "${CLIPS}" \
-      --target_fps 25 --size 256 --workers "$(nproc)"
+      --target_fps 25 --size 256 ${WORKERS:+--workers "$WORKERS"}
 
   log "5/5 prune CSVs to what exists, then build the vocabulary from THAT"
   python scripts/isl/isign_sync_csvs.py --csv_dir "${ISL_DATA}" --lmdb_root "${LMDB_VIDEOS}"

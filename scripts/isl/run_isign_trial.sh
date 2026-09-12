@@ -114,7 +114,7 @@ prep() {
       --manifest "${ISL_DATA}/needed_videos.txt" \
       --lmdb_root "${LMDB_VIDEOS}" \
       --max_src_frames "${MAX_SRC_FRAMES}" --stop_after "${TRIAL_CLIPS}" \
-      --target_fps 25 --size 256 --workers "$(nproc)"
+      --target_fps 25 --size 256 ${WORKERS:+--workers "$WORKERS"}
 
   log "6/8 prune CSVs to what exists, build vocabulary from THAT, preflight"
   python scripts/isl/isign_sync_csvs.py --csv_dir "${ISL_DATA}" --lmdb_root "${LMDB_VIDEOS}"
