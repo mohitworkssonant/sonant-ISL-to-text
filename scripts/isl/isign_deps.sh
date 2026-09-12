@@ -41,7 +41,7 @@ log() { echo -e "\n\033[1;36m[deps] $*\033[0m"; }
 die() { echo -e "\033[1;31m[deps] $*\033[0m" >&2; exit 1; }
 
 log "1/4 core packages"
-pip install --no-cache-dir -q \
+pip install --no-cache-dir -q --root-user-action=ignore --disable-pip-version-check \
     albumentations==1.4.13 \
     numpy==1.24.4 \
     pandas==2.0.1 \
@@ -75,7 +75,7 @@ case "${TORCH_MM}" in
     echo "[deps] torch ${TORCH_MM} is outside the window this repo can use."
     echo "[deps] xformers >=0.0.29 dropped xformers.components.{feedforward,positional_embedding},"
     echo "[deps] which models/metaformer imports. Installing torch 2.4.0 instead."
-    pip install --no-cache-dir -q torch==2.4.0 torchvision==0.19.0 \
+    pip install --no-cache-dir -q --root-user-action=ignore --disable-pip-version-check torch==2.4.0 torchvision==0.19.0 \
         --index-url https://download.pytorch.org/whl/cu121
     XF=0.0.27.post2
     ;;
@@ -83,10 +83,10 @@ esac
 
 log "3/4 xformers ${XF}"
 # --no-deps so pip cannot "helpfully" move torch underneath us.
-pip install --no-cache-dir -q --no-deps "xformers==${XF}"
+pip install --no-cache-dir -q --root-user-action=ignore --disable-pip-version-check --no-deps "xformers==${XF}"
 
 log "4/4 spaCy English model + verification"
-pip install --no-cache-dir -q \
+pip install --no-cache-dir -q --root-user-action=ignore --disable-pip-version-check \
     https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.7.1/en_core_web_lg-3.7.1-py3-none-any.whl
 
 python - <<'PY'

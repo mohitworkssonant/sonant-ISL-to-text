@@ -52,7 +52,12 @@ class BaseTrainer:
         print("MODEL:", count_parameters(self.model))
 
         if not self.support_bfloat:
-            self.scaler = torch.cuda.amp.GradScaler()  # growth_interval=500)
+            # torch.cuda.amp.GradScaler is deprecated in torch 2.4 in favour of
+            # torch.amp.GradScaler("cuda"); same class, new namespace.
+            try:
+                self.scaler = torch.amp.GradScaler("cuda")
+            except (AttributeError, TypeError):
+                self.scaler = torch.cuda.amp.GradScaler()
         else:
             self.scaler = None
         self.grad_clip_norm = cfg.grad_clip_norm if ("grad_clip_norm" in cfg) else None

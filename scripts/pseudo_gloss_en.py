@@ -101,8 +101,15 @@ def main():
         pos = get_parts_of_speech(nlp, sentence)
         lems = []
         for lem, _word, pos_tag in pos:
-            if pos_tag in SELECTED_VOCAB:
-                lems.append(lem)
+            if pos_tag not in SELECTED_VOCAB:
+                continue
+            # Single letters are initials and stray fragments ("B. Sharma",
+            # a split contraction), never meaningful signs. "i" is the one
+            # real single-letter English word. The first ISL trial had "b"
+            # among its ten most common pseudo-glosses.
+            if len(lem) == 1 and lem != "i":
+                continue
+            lems.append(lem)
         all_lems.extend(lems)
         dict_sentence[sentence] = lems
 

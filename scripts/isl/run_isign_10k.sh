@@ -28,6 +28,16 @@ MAX_CLIPS=${MAX_CLIPS:-10000}
 mkdir -p "${ISIGN_RAW}" "${ISL_DATA}" "${LMDB_VIDEOS}" "${SIGN2GPT_RESULTS}" "${SIGN2GPT_CKPT_PATH}"
 log() { echo -e "\n\033[1;36m[isign10k] $*\033[0m"; }
 
+# Third-party deprecation noise. xformers still calls torch.library.impl_abstract,
+# transformers 4.31 still passes resume_download to huggingface_hub, and xformers
+# announces that MixtureOfExperts is unavailable. None of it affects results, and
+# none of it is fixable without changing pinned library versions. Set
+# ISIGN_QUIET=0 to see everything again when debugging - errors and tracebacks
+# are never suppressed, only FutureWarning and UserWarning.
+if [ "${ISIGN_QUIET:-1}" = "1" ]; then
+  export PYTHONWARNINGS="${PYTHONWARNINGS:-ignore::FutureWarning,ignore::UserWarning}"
+fi
+
 prep() {
   log "A1/5  python deps"
   bash "${SIGN2GPT_ROOT}/scripts/isl/isign_deps.sh"

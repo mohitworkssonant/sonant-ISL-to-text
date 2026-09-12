@@ -36,9 +36,16 @@ class Model(nn.Module):
 
         if idist.get_world_size() > 0:
             idist.barrier()
-        dict_additional = self.spatial_model.load_state_dict(
-            torch.load("/tmp/tmp.pth", map_location="cpu"), strict=False
-        )
+        # weights_only=True: this file was just downloaded over HTTP and
+        # torch.load unpickles by default, which executes arbitrary code. The
+        # DINOv2 release is a plain tensor state_dict, so restricting the
+        # unpickler costs nothing and removes the FutureWarning torch 2.4
+        # prints here. Falls back for torch <1.13, which lacks the argument.
+        try:
+            _dino_sd = torch.load("/tmp/tmp.pth", map_location="cpu", weights_only=True)
+        except TypeError:
+            _dino_sd = torch.load("/tmp/tmp.pth", map_location="cpu")
+        dict_additional = self.spatial_model.load_state_dict(_dino_sd, strict=False)
 
         for name, param in self.spatial_model.named_parameters():
             if name in dict_additional.missing_keys:

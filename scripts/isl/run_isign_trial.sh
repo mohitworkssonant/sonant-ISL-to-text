@@ -44,6 +44,16 @@ export ISIGN_S2_EPOCHS=${ISIGN_S2_EPOCHS:-10}
 mkdir -p "${ISL_DATA}" "${LMDB_VIDEOS}" "${SIGN2GPT_RESULTS}" "${SIGN2GPT_CKPT_PATH}" "${CLIPS_DIR}"
 log() { echo -e "\n\033[1;36m[trial] $*\033[0m"; }
 
+# Third-party deprecation noise. xformers still calls torch.library.impl_abstract,
+# transformers 4.31 still passes resume_download to huggingface_hub, and xformers
+# announces that MixtureOfExperts is unavailable. None of it affects results, and
+# none of it is fixable without changing pinned library versions. Set
+# ISIGN_QUIET=0 to see everything again when debugging - errors and tracebacks
+# are never suppressed, only FutureWarning and UserWarning.
+if [ "${ISIGN_QUIET:-1}" = "1" ]; then
+  export PYTHONWARNINGS="${PYTHONWARNINGS:-ignore::FutureWarning,ignore::UserWarning}"
+fi
+
 deps() {
   log "1/8 installing dependencies (~5 min, once per pod)"
   bash "${SIGN2GPT_ROOT}/scripts/isl/isign_deps.sh"

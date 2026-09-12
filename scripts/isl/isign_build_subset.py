@@ -64,6 +64,21 @@ TEXT_CANDIDATES = ["text", "translation", "sentence", "english", "english_text",
 _PIPE_RE = re.compile(r"[|\r\n\t]+")
 _PUNCT_RE = re.compile(r"[.,!?;:\"'`()\[\]{}<>*_~/\\]")
 _SPACE_RE = re.compile(r"\s+")
+# Expand contractions to real words; only the possessive 's is dropped, since
+# "'s" is ambiguous (Rohit's / it is) and inventing the wrong one is worse than
+# losing it. Truncating instead - "don't" -> "don" - just moves the junk class.
+_CONTRACTIONS = [
+    (re.compile(r"\bcan['\u2019]t\b"), "cannot"),
+    (re.compile(r"\bwon['\u2019]t\b"), "will not"),
+    (re.compile(r"\bshan['\u2019]t\b"), "shall not"),
+    (re.compile(r"n['\u2019]t\b"), " not"),
+    (re.compile(r"['\u2019]re\b"), " are"),
+    (re.compile(r"['\u2019]ve\b"), " have"),
+    (re.compile(r"['\u2019]ll\b"), " will"),
+    (re.compile(r"['\u2019]m\b"), " am"),
+    (re.compile(r"['\u2019]d\b"), " would"),
+    (re.compile(r"['\u2019]s\b"), ""),
+]
 
 
 def clean_text(s: str) -> str:
@@ -75,6 +90,11 @@ def clean_text(s: str) -> str:
     s = str(s)
     s = _PIPE_RE.sub(" ", s)
     s = s.lower()
+    # Resolve contractions BEFORE stripping punctuation. Otherwise "it's"
+    # becomes "it s" and the orphan "s" is lemmatised into its own pseudo-gloss
+    # class - "s" was the 4th most common lemma in the first trial.
+    for _re, _rep in _CONTRACTIONS:
+        s = _re.sub(_rep, s)
     s = _PUNCT_RE.sub(" ", s)
     s = _SPACE_RE.sub(" ", s).strip()
     return s
@@ -127,6 +147,13 @@ def main():
                    help="Drop translations shorter than this (default 3)")
     p.add_argument("--max_words", type=int, default=30,
                    help="Drop translations longer than this (default 30)")
+    p.add_argument("--max_clips_per_video", type=int, default=0,
+                   help="Cap clips taken from any one source video (0 = no cap). "
+                        "The first trial drew 226 clips from just 16 videos - 14 per "
+                        "video - so the model saw almost no variation in signer, "
+                        "background or topic. Capping this spends the same clip budget "
+                        "on far more source videos, which is the cheapest way to buy "
+                        "diversity.")
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--dev_frac", type=float, default=0.10)
     p.add_argument("--test_frac", type=float, default=0.10)
@@ -181,6 +208,15 @@ def main():
 
     df["video_id"] = df["name"].map(video_id_of)
     print(f"[subset] {df['video_id'].nunique():,} distinct source videos remain")
+
+    if args.max_clips_per_video:
+        before = len(df)
+        df = (df.sample(frac=1.0, random_state=args.seed)
+                .groupby("video_id", group_keys=False)
+                .head(args.max_clips_per_video)
+                .sort_index())
+        print(f"[subset] <={args.max_clips_per_video} clips per video: "
+              f"{before:,} -> {len(df):,} clips across {df['video_id'].nunique():,} videos")
 
     # ---------------- sample N clips, whole videos at a time ----------------
     rng = np.random.default_rng(args.seed)

@@ -38,6 +38,7 @@ G, R, Y, B, X = "\033[1;32m", "\033[1;31m", "\033[1;33m", "\033[1m", "\033[0m"
 class Report:
     def __init__(self):
         self.rows = []
+        self.s1_threshold_limited = False
 
     def add(self, name, ok, detail):
         self.rows.append((name, ok, detail))
@@ -61,7 +62,18 @@ class Report:
         print("  DOES  - the data format, decode, LMDB, vocabulary, both training stages")
         print("          and generation are compatible and run without intervention.")
         print("  DOES NOT - say anything about translation quality. A few hundred clips")
-        print("          cannot. Quality needs the full-scale run.\n")
+        print("          cannot. Quality needs the full-scale run.")
+        if self.s1_threshold_limited:
+            print()
+            print("  Note on stage 1: class_f1 uses a hard-coded 0.5 threshold, while the")
+            print("  prototype head spreads ~1.0 of probability mass across every class. At")
+            print("  a few hundred clips almost nothing crosses 0.5, so a valid class_f1 of")
+            print("  0.0 is expected here and is NOT evidence of a broken pipeline. To watch")
+            print("  it actually move, re-run stage 1 alone with more epochs - it is ~15 s")
+            print("  per epoch at this size:")
+            print("      SIGN2GPT_CKPT_PATH=/workspace/checkpoints_s1x ISIGN_S1_EPOCHS=60 \\")
+            print("        python main.py --config=configs/isl/isign_budget_stage1_config.py")
+        print()
         return 1 if fails else 0
 
 
@@ -80,6 +92,17 @@ def all_floats(log_text, key):
 def last_float(log_text, key):
     hits = all_floats(log_text, key)
     return hits[-1] if hits else None
+
+
+def exact_floats(log_text, key):
+    """Values logged under exactly `key` - no prefix matching.
+
+    Needed for losses: a prefix match on "loss" also swallows
+    'train/avg_loss_bce', interleaving two different series and making the
+    first-to-last comparison meaningless.
+    """
+    pat = rf"['\"]{re.escape(key)}['\"]\s*:\s*([-+0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)"
+    return [float(x) for x in re.findall(pat, log_text)]
 
 
 def main():
@@ -137,18 +160,52 @@ def main():
         rep.add("3. Pseudo-gloss keys line up", False, f"{type(e).__name__}: {e}")
 
     # 4 ------------------------------------------------------------ stage 1
+    #
+    # Judging stage 1 by "valid class_f1 > 0" was wrong for a trial, and the
+    # first real run exposed it. ClassF1Score uses a HARD-CODED threshold of
+    # 0.5 (trainer/psuedo_gloss_trainer.py), while the prototype head emits
+    # class_scores = sum_t(cls_softmax * time_softmax) - a distribution whose
+    # total across classes is ~1. With 546 classes the average class sits at
+    # 0.0018, so a positive prediction needs one class to absorb ~270x the
+    # mean. PHOENIX gets there, but only after ~90k sample-passes; a 226-clip,
+    # 6-epoch trial has ~1.4k. Valid class_f1 = 0 at this scale says nothing
+    # about wiring.
+    #
+    # What DOES discriminate at trial scale:
+    #   * the metric prints 0.0 rather than NaN -> at least one clip carried a
+    #     pseudo-gloss target (compute() averages over classes with tp+fn>0;
+    #     with no targets that selection is empty and mean() is NaN);
+    #   * train class_f1 > 0 -> some predictions actually cross the threshold;
+    #   * the loss falls and nothing crashed.
     try:
         t1 = Path(a.s1_log).read_text(errors="ignore")
-        f1s = all_floats(t1, "valid/class_f1_score")
-        losses = all_floats(t1, "train/loss") or all_floats(t1, "loss")
-        fell = len(losses) > 2 and losses[-1] < losses[0]
-        ok = bool(f1s) and max(f1s) > 0.0
-        detail = (f"class_f1 last={f1s[-1]:.4f} best={max(f1s):.4f}" if f1s else "no class_f1 in log")
+        vf1 = all_floats(t1, "valid/class_f1_score")
+        tf1 = all_floats(t1, "train/class_f1_score")
+        losses = (exact_floats(t1, "train/avg_loss") or exact_floats(t1, "train/loss")
+                  or exact_floats(t1, "loss"))
+        fell = len(losses) >= 2 and losses[-1] < losses[0]
+        has_targets = bool(vf1) or bool(tf1)          # printed at all, and not NaN
+        learning = (max(tf1) > 0 if tf1 else False) or (max(vf1) > 0 if vf1 else False)
+
+        ok = has_targets and fell
+        bits = []
+        if vf1:
+            bits.append(f"valid class_f1 {vf1[-1]:.4f}")
+        if tf1:
+            bits.append(f"train class_f1 {max(tf1):.4f}")
         if losses:
-            detail += f"; loss {losses[0]:.3f} -> {losses[-1]:.3f}" + ("" if fell else " (NOT falling)")
+            bits.append(f"loss {losses[0]:.3f} -> {losses[-1]:.3f}" + ("" if fell else " (NOT falling)"))
+        detail = "; ".join(bits) if bits else "no stage-1 metrics in log"
+
+        if not has_targets:
+            ok = False
+            detail += "  <- no class_f1 logged at all: pseudo-gloss targets are missing"
+        elif not learning:
+            detail += "  (threshold-limited at this scale, not a wiring fault - see notes)"
         if "CUDA out of memory" in t1:
             ok, detail = False, "CUDA OOM - lower ISIGN_BS or ISIGN_MAX_SEQ. " + detail
         rep.add("4. Stage 1 (vision) trained", ok, detail)
+        rep.s1_threshold_limited = has_targets and not learning
     except Exception as e:                                    # noqa: BLE001
         rep.add("4. Stage 1 (vision) trained", False, f"{type(e).__name__}: {e}")
 
