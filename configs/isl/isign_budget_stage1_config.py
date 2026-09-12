@@ -117,6 +117,16 @@ def get_config():
 
     cfg.max_epochs = int(os.environ.get("ISIGN_S1_EPOCHS", 12))
     cfg.model_checkpoint_dir = ""
+    # A cosine schedule sized as (max_epochs - warmup_epochs) collapses to a
+    # zero-length cycle when the two are equal, which surfaces as an opaque
+    # ZeroDivisionError deep in ignite rather than a config error. Someone
+    # trying "1 epoch just to test" hits this immediately, so fail loudly here.
+    _warm = cfg.lr_scheduler_params["warmup_epochs"]
+    assert cfg.max_epochs > _warm, (
+        f"max_epochs ({cfg.max_epochs}) must exceed warmup_epochs ({_warm}). "
+        f"For a quick smoke test use {_warm + 1} or more, not 1."
+    )
+
 
     data_dir = f"{code_path}/data/isl"
     pkl_dir = f"{data_dir}/processed_words.isl_pkl"

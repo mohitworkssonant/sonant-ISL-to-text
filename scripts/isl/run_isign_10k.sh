@@ -35,7 +35,7 @@ prep() {
       lmdb==1.2.1 timm==0.9.16 requests ml-collections==0.1.1 \
       pytorch-ignite==0.4.13 Pillow==9.0.1 matplotlib nlpaug==1.1.11 nltk==3.6.7 \
       fasttext==0.9.2 sentencepiece==0.1.99 einops==0.8.0 mediapipe==0.10.5 \
-      onnxscript albucore==0.0.13 spacy==3.7.4 opencv-python-headless==4.8.1.78 \
+      onnxscript albucore==0.0.13 spacy==3.7.4 opencv-python==4.8.1.78 \
       "huggingface_hub[cli]"
   pip install --no-cache-dir -q --no-deps xformers==0.0.27.post2
   pip install --no-cache-dir -q \
