@@ -147,6 +147,10 @@ def main():
                    help="Drop translations shorter than this (default 3)")
     p.add_argument("--max_words", type=int, default=30,
                    help="Drop translations longer than this (default 30)")
+    p.add_argument("--keeplist", default=None,
+                   help="File of clip ids (one per line) to restrict to - e.g. the coherent "
+                        "subset written by isign_corpus_stats.py, or an LLM filter's verdict. "
+                        "Applied before every other filter.")
     p.add_argument("--max_clips_per_video", type=int, default=0,
                    help="Cap clips taken from any one source video (0 = no cap). "
                         "The first trial drew 226 clips from just 16 videos - 14 per "
@@ -196,6 +200,15 @@ def main():
 
     df["translation"] = df[text_col].map(clean_text)
     df["name"] = df[uid_col].astype(str).str.strip()
+
+    if args.keeplist:
+        keep = {ln.strip() for ln in Path(args.keeplist).read_text().splitlines() if ln.strip()}
+        before = len(df)
+        df = df[df["name"].isin(keep)]
+        print(f"[subset] keeplist {Path(args.keeplist).name}: {before:,} -> {len(df):,} "
+              f"({len(keep):,} ids listed)")
+        if df.empty:
+            sys.exit("[err] keeplist matched nothing - are these ids from the same release?")
 
     before = len(df)
     wc = df["translation"].str.split().str.len()
